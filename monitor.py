@@ -1,26 +1,14 @@
 """
-Watch Limited Edition Monitor - Modulo 1
+Watch Limited Edition Monitor
 Controlla le pagine ufficiali dei brand, rileva link nuovi e
 avvisa su Telegram se sembrano edizioni limitate.
-
-Setup:
-  pip install requests beautifulsoup4 playwright
-  playwright install chromium
-  export TELEGRAM_TOKEN="..."   (da @BotFather)
-  export TELEGRAM_CHAT_ID="..." (il tuo chat id)
-
-Esecuzione (cron ogni 2 ore):
-  0 */2 * * * cd /percorso && python monitor.py
-
-La prima esecuzione per ogni brand salva solo lo stato iniziale, senza alert.
 """
+import json
 import os
 import re
 import sqlite3
 import time
 from urllib.parse import urljoin, urlparse
-
-import json
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,9 +16,9 @@ from bs4 import BeautifulSoup
 from extractor import extract_watch, format_alert
 
 DB_PATH = "watches.db"
-MAX_NEW_LINKS_TO_CHECK = 20   # limite di pagine prodotto aperte per brand a ogni giro
-REQUEST_DELAY = 2             # secondi di pausa tra richieste (siate gentili)
-UA = "Mozilla/5.0 (compatible; WatchMonitor/0.1)"
+MAX_NEW_LINKS_TO_CHECK = 20
+REQUEST_DELAY = 2
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 KEYWORDS = [
     "limited edition", "limited-edition", "limited series", "numbered",
@@ -39,8 +27,6 @@ KEYWORDS = [
     "only watch", "anniversary edition", "unique piece",
 ]
 
-# ATTENZIONE: verifica e correggi gli URL, i siti cambiano spesso struttura.
-# js=True usa Playwright (siti pesanti in JavaScript).
 BRANDS = [
     {"name": "Omega", "js": True,
      "urls": ["https://www.omegawatches.com/en-us/watches/special-editions"]},
@@ -86,7 +72,8 @@ def fetch_js(url):
         _pw = (p, p.chromium.launch(headless=True))
     page = _pw[1].new_page(user_agent=UA)
     try:
-        page.goto(url, wait_until="networkidle", timeout=45000)
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(6000)
         return page.content()
     finally:
         page.close()
@@ -114,7 +101,6 @@ def extract_links(html, base_url):
 def looks_limited(text):
     t = text.lower()
     hits = [k for k in KEYWORDS if k in t]
-    # "limited to 500 pieces" e simili
     if re.search(r"limited to \d+|\d+\s*(pieces|pezzi|exemplaires)", t):
         hits.append("numero pezzi")
     return hits
@@ -158,44 +144,4 @@ def check_brand(db, brand):
             print(f"  ! {name}: errore su {url}: {e}")
         time.sleep(REQUEST_DELAY)
 
-    known = {r[0] for r in db.execute("SELECT url FROM links WHERE brand=?", (name,))}
-    new = {u: t for u, t in all_links.items() if u not in known}
-    print(f"{name}: {len(all_links)} link, {len(new)} nuovi")
-
-    now = time.strftime("%Y-%m-%d %H:%M:%S")
-    for i, (url, title) in enumerate(new.items()):
-        limited, hits = 0, []
-        if seeded:  # niente alert al primo giro
-            hits = looks_limited(f"{title} {url}")
-            text = ""
-            if i < MAX_NEW_LINKS_TO_CHECK:
-                text = page_text(url, js)
-                time.sleep(REQUEST_DELAY)
-                hits = hits or looks_limited(text)
-            if hits and text:
-                data = extract_watch(name, url, text)
-                # Claude filtra i falsi positivi (pagine che citano solo "pezzi" ecc.)
-                if data and data.get("is_limited_edition"):
-                    limited = 1
-                    db.execute("INSERT OR REPLACE INTO editions VALUES (?,?,?,?)",
-                               (name, url, now, json.dumps(data, ensure_ascii=False)))
-                    notify(format_alert(name, url, data))
-        db.execute("INSERT OR IGNORE INTO links VALUES (?,?,?,?,?)",
-                   (name, url, title, now, limited))
-    db.commit()
-
-
-def main():
-    db = init_db()
-    for brand in BRANDS:
-        try:
-            check_brand(db, brand)
-        except Exception as e:
-            print(f"! {brand['name']} fallito: {e}")
-    if _pw:
-        _pw[1].close()
-        _pw[0].stop()
-
-
-if __name__ == "__main__":
-    main()
+    known = {r[0] for r in db.execute("SELECT url FROM links WHERE brand=?",
