@@ -31,7 +31,7 @@ BRANDS = [
     {"name": "Omega", "js": True,
      "urls": ["https://www.omegawatches.com/en-us/watches/special-editions"]},
     {"name": "Tudor", "js": True,
-     "urls": ["https://www.tudorwatch.com/en/news"]},
+     "urls": ["https://www.tudorwatch.com/en/new-watches"]},
     {"name": "Seiko", "js": False,
      "urls": ["https://www.seikowatches.com/global-en/special/limited"]},
     {"name": "Grand Seiko", "js": True,
