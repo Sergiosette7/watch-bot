@@ -144,4 +144,43 @@ def check_brand(db, brand):
             print(f"  ! {name}: errore su {url}: {e}")
         time.sleep(REQUEST_DELAY)
 
-    known = {r[0] for r in db.execute("SELECT url FROM links WHERE brand=?",
+    known = {r[0] for r in db.execute("SELECT url FROM links WHERE brand=?", (name,))}
+    new = {u: t for u, t in all_links.items() if u not in known}
+    print(f"{name}: {len(all_links)} link, {len(new)} nuovi")
+
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    for i, (url, title) in enumerate(new.items()):
+        limited = 0
+        if seeded:  # niente alert al primo giro
+            hits = looks_limited(f"{title} {url}")
+            text = ""
+            if i < MAX_NEW_LINKS_TO_CHECK:
+                text = page_text(url, js)
+                time.sleep(REQUEST_DELAY)
+                hits = hits or looks_limited(text)
+            if hits and text:
+                data = extract_watch(name, url, text)
+                if data and data.get("is_limited_edition"):
+                    limited = 1
+                    db.execute("INSERT OR REPLACE INTO editions VALUES (?,?,?,?)",
+                               (name, url, now, json.dumps(data, ensure_ascii=False)))
+                    notify(format_alert(name, url, data))
+        db.execute("INSERT OR IGNORE INTO links VALUES (?,?,?,?,?)",
+                   (name, url, title, now, limited))
+    db.commit()
+
+
+def main():
+    db = init_db()
+    for brand in BRANDS:
+        try:
+            check_brand(db, brand)
+        except Exception as e:
+            print(f"! {brand['name']} fallito: {e}")
+    if _pw:
+        _pw[1].close()
+        _pw[0].stop()
+
+
+if __name__ == "__main__":
+    main()
