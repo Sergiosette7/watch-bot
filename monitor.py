@@ -1,13 +1,15 @@
 """
 Watch Limited Edition Monitor
-Controlla le pagine ufficiali dei brand, rileva link nuovi e
-avvisa su Telegram se sembrano edizioni limitate.
+1) Controlla le pagine ufficiali dei brand e rileva link nuovi.
+2) Controlla i feed RSS delle riviste per anticipare le uscite.
+Avvisa su Telegram se sembrano edizioni limitate.
 """
 import json
 import os
 import re
 import sqlite3
 import time
+import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -47,6 +49,47 @@ BRANDS = [
      "urls": ["https://www.swatch.com/en-us/new-arrivals"]},
 ]
 
+# ---------- riviste (feed RSS) ----------
+# Se un feed non risponde, il bot lo salta e continua con gli altri.
+FEEDS = [
+    ("Monochrome", "https://monochrome-watches.com/feed/"),
+    ("Fratello", "https://fratellowatches.com/feed/"),
+    ("Time+Tide", "https://timeandtidewatches.com/feed/"),
+    ("Worn & Wound", "https://wornandwound.com/feed/"),
+    ("A Blog To Watch", "https://www.ablogtowatch.com/feed/"),
+    ("Hodinkee", "https://www.hodinkee.com/articles/rss.xml"),
+]
+
+# Brand che ti interessano: gli articoli che li citano arrivano con una ⭐.
+# Aggiungi qui altri microbrand quando vuoi (minuscolo).
+WATCH_BRANDS = [
+    "venezianico", "kurono", "out of order", "kuoe", "orient", "seiko",
+    "swatch", "baltic", "unimatic", "lorier", "nodus", "farer", "serica",
+    "studio underd0g", "zelos", "dan henry",
+]
+
+# Brand fuori budget: gli articoli che parlano SOLO di questi vengono ignorati.
+# Aggiungi (minuscolo) quelli che non ti interessano, per esempio "omega".
+IGNORE_BRANDS = [
+    "rolex", "patek", "audemars", "richard mille", "vacheron", "a. lange",
+    "lange & söhne", "cartier", "hublot", "breguet", "blancpain",
+    "jaeger-lecoultre", "f.p. journe", "greubel", "h. moser", "urwerk",
+    "mb&f", "van cleef", "chopard", "piaget",
+]
+
+# Segnali di edizione limitata (valgono per QUALSIASI brand).
+FEED_PATTERNS = [
+    r"\blimited[- ](?:edition|series|run|release|production)\b",
+    r"\blimited to\b",
+    r"\bpre-?orders?\b",
+    r"\bsmall[- ]batch\b",
+    r"\bnumbered\b",
+    r"\b\d[\d,.']*\s+(?:pieces|units|examples|pezzi)\b",
+    r"\bedizione limitata\b",
+    r"\bserie limitata\b",
+]
+MAX_FEED_ALERTS = 15  # tetto di sicurezza per ogni giro
+
 
 # ---------- database ----------
 def init_db():
@@ -56,6 +99,8 @@ def init_db():
         is_limited INTEGER, PRIMARY KEY (brand, url))""")
     db.execute("""CREATE TABLE IF NOT EXISTS editions (
         brand TEXT, url TEXT PRIMARY KEY, found_at TEXT, data TEXT)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS feed_items (
+        url TEXT PRIMARY KEY, feed TEXT, title TEXT, seen TEXT)""")
     return db
 
 
@@ -139,7 +184,7 @@ def notify(text):
         print(f"  ! Telegram ha risposto {r.status_code}: {r.text[:200]}")
 
 
-# ---------- logica principale ----------
+# ---------- controllo siti dei brand ----------
 def check_brand(db, brand):
     name, js = brand["name"], brand["js"]
     seeded = db.execute("SELECT 1 FROM links WHERE brand=? LIMIT 1", (name,)).fetchone()
@@ -177,6 +222,79 @@ def check_brand(db, brand):
     db.commit()
 
 
+# ---------- controllo riviste (RSS) ----------
+def _text(el, tag):
+    found = el.find(tag)
+    return (found.text or "").strip() if found is not None and found.text else ""
+
+
+def parse_feed(xml_text):
+    """Ritorna una lista di (titolo, link, riassunto) da un feed RSS o Atom."""
+    root = ET.fromstring(xml_text)
+    items = []
+    for it in root.iter("item"):
+        items.append((_text(it, "title"), _text(it, "link"), _text(it, "description")))
+    ns = "{http://www.w3.org/2005/Atom}"
+    for en in root.iter(ns + "entry"):
+        link = en.find(ns + "link")
+        href = link.get("href", "") if link is not None else ""
+        items.append((_text(en, ns + "title"), href, _text(en, ns + "summary")))
+    return items
+
+
+def _has(word, text):
+    return re.search(r"(?<![\w])" + re.escape(word) + r"(?![\w])", text) is not None
+
+
+def match_article(title, summary):
+    """Ritorna (miei_brand, brand_ignorati, segnali trovati)."""
+    clean = BeautifulSoup(summary, "html.parser").get_text(" ", strip=True)
+    text = f"{title} {clean[:600]}".lower()
+    mine = [b for b in WATCH_BRANDS if _has(b, text)]
+    ignored = [b for b in IGNORE_BRANDS if _has(b, text)]
+    signals = []
+    for p in FEED_PATTERNS:
+        m = re.search(p, text)
+        if m:
+            signals.append(m.group(0))
+    return mine, ignored, signals
+
+
+def check_feeds(db):
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    sent = 0
+    for feed_name, feed_url in FEEDS:
+        try:
+            items = parse_feed(fetch_static(feed_url))
+        except Exception as e:
+            print(f"  ! feed {feed_name}: {e}")
+            continue
+        seeded = db.execute("SELECT 1 FROM feed_items WHERE feed=? LIMIT 1",
+                            (feed_name,)).fetchone()
+        new = 0
+        for title, link, summary in items:
+            if not link or db.execute("SELECT 1 FROM feed_items WHERE url=?",
+                                      (link,)).fetchone():
+                continue
+            new += 1
+            db.execute("INSERT OR IGNORE INTO feed_items VALUES (?,?,?,?)",
+                       (link, feed_name, title, now))
+            if not seeded or sent >= MAX_FEED_ALERTS:  # primo giro silenzioso
+                continue
+            mine, ignored, signals = match_article(title, summary)
+            if not signals:
+                continue
+            if ignored and not mine:  # solo brand fuori budget
+                continue
+            icon = "⭐" if mine else "📰"
+            brand_line = f"Brand tuo: {', '.join(mine)}\n" if mine else ""
+            notify(f"{icon} {feed_name}: possibile edizione limitata\n{title}\n"
+                   f"{brand_line}Segnali: {', '.join(signals)}\n{link}")
+            sent += 1
+        db.commit()
+        print(f"{feed_name} (rivista): {len(items)} articoli, {new} nuovi")
+
+
 def main():
     db = init_db()
     for brand in BRANDS:
@@ -184,6 +302,10 @@ def main():
             check_brand(db, brand)
         except Exception as e:
             print(f"! {brand['name']} fallito: {e}")
+    try:
+        check_feeds(db)
+    except Exception as e:
+        print(f"! riviste fallite: {e}")
     if _pw:
         _pw[1].close()
         _pw[0].stop()
