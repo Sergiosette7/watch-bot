@@ -1,9 +1,10 @@
 """
 Watch Limited Edition Monitor
-1) Controlla le pagine ufficiali dei brand e rileva link nuovi.
+1) Controlla le pagine ufficiali dei brand: link nuovi e testo nuovo.
 2) Controlla i feed RSS delle riviste per anticipare le uscite.
 Avvisa su Telegram se sembrano edizioni limitate.
 """
+import hashlib
 import json
 import os
 import re
@@ -43,6 +44,9 @@ BRANDS = [
      "urls": ["https://www.kuoe-en.com/"]},
     {"name": "Orient", "js": False,
      "urls": ["https://shop.orientwatchusa.com/collections/limited-edition-watches"]},
+    {"name": "Alpina", "js": False,
+     "urls": ["https://alpinawatches.com/",
+              "https://alpinawatches.com/blogs/news"]},
     {"name": "Seiko", "js": False,
      "urls": ["https://www.seikowatches.com/global-en/special/limited"]},
     {"name": "Swatch", "js": True,
@@ -64,8 +68,8 @@ FEEDS = [
 # Aggiungi qui altri microbrand quando vuoi (minuscolo).
 WATCH_BRANDS = [
     "venezianico", "kurono", "out of order", "kuoe", "orient", "seiko",
-    "swatch", "baltic", "unimatic", "lorier", "nodus", "farer", "serica",
-    "studio underd0g", "zelos", "dan henry",
+    "swatch", "alpina", "baltic", "unimatic", "lorier", "nodus", "farer",
+    "serica", "studio underd0g", "zelos", "dan henry",
 ]
 
 # Brand fuori budget: gli articoli che parlano SOLO di questi vengono ignorati.
@@ -101,6 +105,8 @@ def init_db():
         brand TEXT, url TEXT PRIMARY KEY, found_at TEXT, data TEXT)""")
     db.execute("""CREATE TABLE IF NOT EXISTS feed_items (
         url TEXT PRIMARY KEY, feed TEXT, title TEXT, seen TEXT)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS page_snap (
+        url TEXT PRIMARY KEY, brand TEXT, hashes TEXT)""")
     return db
 
 
@@ -184,6 +190,50 @@ def notify(text):
         print(f"  ! Telegram ha risposto {r.status_code}: {r.text[:200]}")
 
 
+# ---------- cambiamenti su pagine esistenti ----------
+def page_segments(html):
+    """Righe di testo visibile della pagina (senza script e stili)."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg"]):
+        tag.decompose()
+    segs = []
+    for line in soup.get_text("\n").split("\n"):
+        line = " ".join(line.split())
+        if 15 <= len(line) <= 300:
+            segs.append(line)
+    return segs
+
+
+def _norm(seg):
+    """Toglie timer e conti alla rovescia, che cambiano a ogni controllo."""
+    s = re.sub(r"\d{1,2}:\d{2}(?::\d{2})?", "#", seg.lower())
+    return re.sub(r"\b\d+\s*(?:d|h|m|s|days?|hours?|mins?|minutes?|seconds?)\b", "#", s)
+
+
+def _hash(text):
+    return hashlib.md5(text.encode("utf-8")).hexdigest()[:10]
+
+
+def check_page_changes(db, name, url, html):
+    """Avvisa se su una pagina già nota compare testo nuovo da edizione limitata."""
+    keyed = {_hash(_norm(s)): s for s in page_segments(html)}
+    row = db.execute("SELECT hashes FROM page_snap WHERE url=?", (url,)).fetchone()
+    if row is None:  # primo giro: salva e basta
+        db.execute("INSERT INTO page_snap VALUES (?,?,?)",
+                   (url, name, json.dumps(sorted(keyed))))
+        return
+    old = set(json.loads(row[0]))
+    if set(keyed) == old:
+        return
+    fresh = [keyed[h] for h in keyed if h not in old]
+    db.execute("UPDATE page_snap SET hashes=? WHERE url=?",
+               (json.dumps(sorted(keyed)), url))
+    hits = [s for s in fresh if looks_limited(s)]
+    if hits:
+        lines = "\n".join(f"• {h[:200]}" for h in hits[:3])
+        notify(f"🔔 {name}: novità su una pagina esistente\n{lines}\n{url}")
+
+
 # ---------- controllo siti dei brand ----------
 def check_brand(db, brand):
     name, js = brand["name"], brand["js"]
@@ -191,7 +241,9 @@ def check_brand(db, brand):
     all_links = {}
     for url in brand["urls"]:
         try:
-            all_links.update(extract_links(fetch(url, js), url))
+            html = fetch(url, js)
+            all_links.update(extract_links(html, url))
+            check_page_changes(db, name, url, html)
         except Exception as e:
             print(f"  ! {name}: errore su {url}: {e}")
         time.sleep(REQUEST_DELAY)
