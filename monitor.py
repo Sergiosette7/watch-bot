@@ -230,7 +230,7 @@ def _text(el, tag):
 
 def parse_feed(xml_text):
     """Ritorna una lista di (titolo, link, riassunto) da un feed RSS o Atom."""
-    root = ET.fromstring(xml_text)
+    root = ET.fromstring(xml_text.strip().lstrip("\ufeff"))
     items = []
     for it in root.iter("item"):
         items.append((_text(it, "title"), _text(it, "link"), _text(it, "description")))
