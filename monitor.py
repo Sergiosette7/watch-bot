@@ -25,21 +25,26 @@ KEYWORDS = [
     "pieces", "special edition", "edizione limitata", "serie limitata",
     "exemplaires", "pezzi", "boutique edition", "online exclusive",
     "only watch", "anniversary edition", "unique piece",
+    "pre-order", "preorder", "small batch",
 ]
 
+# js=True usa il browser (siti pesanti), js=False è più veloce.
 BRANDS = [
-    {"name": "Omega", "js": True,
-     "urls": ["https://www.omegawatches.com/en-us/watches/special-editions"]},
-    {"name": "Tudor", "js": True,
-     "urls": ["https://www.tudorwatch.com/en/new-watches"]},
+    {"name": "Venezianico", "js": False,
+     "urls": ["https://venezianico.com/collections/limited-editions",
+              "https://venezianico.com/"]},
+    {"name": "Kurono Tokyo", "js": False,
+     "urls": ["https://kuronotokyo.com/"]},
+    {"name": "Out of Order", "js": False,
+     "urls": ["https://outoforderwatches.com/"]},
+    {"name": "Kuoe Kyoto", "js": True,
+     "urls": ["https://www.kuoe-en.com/"]},
+    {"name": "Orient", "js": True,
+     "urls": ["https://www.orient-watch.com/"]},
     {"name": "Seiko", "js": False,
      "urls": ["https://www.seikowatches.com/global-en/special/limited"]},
-    {"name": "Grand Seiko", "js": True,
-     "urls": ["https://www.grand-seiko.com/global-en/collections/limited-edition"]},
     {"name": "Swatch", "js": True,
      "urls": ["https://www.swatch.com/en-us/new-arrivals"]},
-    {"name": "Panerai", "js": True,
-     "urls": ["https://www.panerai.com/en/collections/watch-collection.html"]},
 ]
 
 
@@ -86,11 +91,11 @@ def fetch(url, js):
 # ---------- parsing ----------
 def extract_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
-    host = urlparse(base_url).netloc
+    host = urlparse(base_url).netloc.replace("www.", "")
     found = {}
     for a in soup.find_all("a", href=True):
         url = urljoin(base_url, a["href"]).split("#")[0].split("?")[0]
-        if urlparse(url).netloc != host:
+        if urlparse(url).netloc.replace("www.", "") != host:
             continue
         title = (a.get_text(" ", strip=True) or a.get("title") or "")[:150]
         if url not in found or len(title) > len(found[url]):
@@ -125,11 +130,13 @@ def notify(text):
     if not token or not chat:
         print("[ALERT]", text)
         return
-    requests.post(
+    r = requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         json={"chat_id": chat, "text": text, "disable_web_page_preview": False},
         timeout=20,
     )
+    if r.status_code != 200:
+        print(f"  ! Telegram ha risposto {r.status_code}: {r.text[:200]}")
 
 
 # ---------- logica principale ----------
