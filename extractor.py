@@ -7,12 +7,13 @@ MATERIALS = ["titanium", "titanio", "stainless steel", "acciaio", "bronze", "bro
 MOVEMENTS = ["automatic", "automatico", "manual", "carica manuale", "quartz", "quarzo",
              "spring drive", "tourbillon", "chronograph", "cronografo", "co-axial", "calibre", "caliber"]
 CHANNELS = {
-    "lottery": ["lottery", "raffle", "ballot", "lotteria", "sorteggio"],
+    "lottery": ["lottery", "raffle", "ballot", "lotteria", "sorteggio", "抽選"],
     "boutique": ["boutique exclusive", "boutique only", "only in boutique", "solo in boutique"],
     "online": ["online exclusive", "online only", "esclusiva online", "available online"],
 }
 LIMITED = ["limited edition", "limited series", "numbered", "edizione limitata",
-           "serie limitata", "unique piece"]
+           "serie limitata", "unique piece", "lottery", "raffle", "ballot",
+           "pre-order", "preorder", "order window", "限定", "抽選", "受注"]
 
 
 def _find(text, words):
@@ -32,7 +33,7 @@ def extract_watch(brand, url, text):
                 size = int(digits)
                 break
     price, cur = None, None
-    m = re.search(r"(€|eur|\$|usd|chf|£|gbp)\s?(\d{1,3}(?:[.,' ]\d{3})*)|(\d{1,3}(?:[.,' ]\d{3})+)\s?(€|eur|\$|usd|chf|£|gbp)", t)
+    m = re.search(r"(€|eur|\$|usd|chf|£|gbp|¥|jpy)\s?(\d{1,3}(?:[.,' ]\d{3})*)|(\d{1,3}(?:[.,' ]\d{3})+)\s?(€|eur|\$|usd|chf|£|gbp|¥|jpy|円)", t)
     if m:
         cur = m.group(1) or m.group(4)
         raw = m.group(2) or m.group(3)
