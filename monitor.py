@@ -29,9 +29,13 @@ KEYWORDS = [
     "exemplaires", "pezzi", "boutique edition", "online exclusive",
     "only watch", "anniversary edition", "unique piece",
     "pre-order", "preorder", "small batch",
+    # aste/lotterie e termini giapponesi (microbrand tipo Kurono)
+    "lottery", "raffle", "ballot", "application period", "order window",
+    "限定", "数量限定", "抽選", "受注", "先行販売",
 ]
 
 # js=True usa il browser (siti pesanti), js=False è più veloce.
+# Per aggiungere un brand copia un blocco {...} e cambia nome e indirizzo.
 BRANDS = [
     {"name": "Venezianico", "js": False,
      "urls": ["https://venezianico.com/collections/limited-editions",
@@ -65,20 +69,63 @@ FEEDS = [
 ]
 
 # Brand che ti interessano: gli articoli che li citano arrivano con una ⭐.
-# Aggiungi qui altri microbrand quando vuoi (minuscolo).
+# (include le due liste che mi hai mandato: Giappone per fascia + top 200).
+# Aggiungi o togli nomi quando vuoi (minuscolo, tra virgolette).
 WATCH_BRANDS = [
-    "venezianico", "kurono", "out of order", "kuoe", "orient", "seiko",
-    "swatch", "alpina", "baltic", "unimatic", "lorier", "nodus", "farer",
-    "serica", "studio underd0g", "zelos", "dan henry",
+    # microbrand e brand già seguiti
+    "venezianico", "kurono", "out of order", "kuoe", "alpina", "baltic",
+    "unimatic", "lorier", "nodus", "farer", "serica", "studio underd0g",
+    "zelos", "dan henry", "swatch",
+    # Giappone: alta orologeria e indipendenti
+    "masahiro kikuno", "hajime asaoka", "daizoh makihara", "naoya hida",
+    "kikuchi nakagawa", "masa's pastime", "nouvelle chronometrie",
+    "quietclub", "quiet club", "credor", "minase", "takano", "otsuka lotec",
+    "lotec", "campanola", "kiwame tokyo", "knot",
+    # Giappone: marchi grandi
+    "grand seiko", "seiko", "orient star", "orient", "citizen", "the citizen",
+    "oceanus", "casio", "g-shock", "mr-g", "q&q",
+    # Svizzera accessibile / media fascia
+    "tissot", "oris", "rado", "longines", "mido", "certina", "doxa", "eterna",
+    "edox", "frederique constant", "baume & mercier", "raymond weil",
+    "maurice lacroix", "eberhard", "fortis", "nivada grenchen", "vulcain",
+    "louis erard", "norqain", "movado", "glycine", "zodiac", "aquastar",
+    "ebel", "corum", "hamilton", "bell & ross",
+    # Germania
+    "nomos", "sinn", "junghans", "stowa", "laco", "damasko", "hanhart",
+    "tutima", "kudoke", "meistersinger", "archimede", "union glashütte",
+    "mühle glashütte", "chronoswiss",
+    # Regno Unito
+    "bremont", "christopher ward", "garrick", "anordain", "elliot brown",
+    "cwc", "schofield", "william wood", "pinion",
+    # USA
+    "bulova", "timex", "shinola", "weiss", "brew watches", "monta",
+    "oak & oscar",
+    # Francia e Italia
+    "yema", "pequignet", "herbelin", "b.r.m", "u-boat", "locman", "zannetti",
+    # Altri paesi
+    "raketa", "vostok", "molnija", "sea-gull", "ciga design", "halda",
+    "suf helsinki", "leijona", "gavox", "raidillon", "beauregard", "habring",
+    "nicholas hacko", "bausele", "second hour", "bangalore watch company",
+    "straum", "prim", "crepas", "pita",
 ]
 
 # Brand fuori budget: gli articoli che parlano SOLO di questi vengono ignorati.
-# Aggiungi (minuscolo) quelli che non ti interessano, per esempio "omega".
+# Se un nome sta in entrambe le liste, vince WATCH_BRANDS.
 IGNORE_BRANDS = [
     "rolex", "patek", "audemars", "richard mille", "vacheron", "a. lange",
     "lange & söhne", "cartier", "hublot", "breguet", "blancpain",
     "jaeger-lecoultre", "f.p. journe", "greubel", "h. moser", "urwerk",
-    "mb&f", "van cleef", "chopard", "piaget",
+    "mb&f", "van cleef", "chopard", "piaget", "omega", "tudor", "panerai",
+    "breitling", "iwc", "zenith", "tag heuer", "ulysse nardin",
+    "girard-perregaux", "parmigiani", "roger dubuis", "de bethune",
+    "laurent ferrier", "gerald charles", "franck muller", "bovet", "biver",
+    "armin strom", "czapek", "jacob & co", "glashütte original",
+    "moritz grossmann", "lang & heyne", "dornblüth", "roger w. smith",
+    "konstantin chaykin", "christiaan van der klaauw", "holthinrichs",
+    "de rijke", "grönefeld", "voutilainen", "philippe dufour",
+    "romain gauthier", "ludovic ballouard", "andreas strehler",
+    "simon brette", "urban jürgensen", "ressence", "sarpaneva", "bulgari",
+    "bvlgari",
 ]
 
 # Segnali di edizione limitata (valgono per QUALSIASI brand).
@@ -91,6 +138,13 @@ FEED_PATTERNS = [
     r"\b\d[\d,.']*\s+(?:pieces|units|examples|pezzi)\b",
     r"\bedizione limitata\b",
     r"\bserie limitata\b",
+    r"\blottery\b",
+    r"\braffle\b",
+    r"\bballot\b",
+    r"\border (?:window|period)\b",
+    r"\bapplication period\b",
+    r"限定",
+    r"抽選",
 ]
 MAX_FEED_ALERTS = 15  # tetto di sicurezza per ogni giro
 
